@@ -2,10 +2,13 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")] 
 
 namespace gvaduha.proto.EventNotification
 {
-    class Event : ICloneable
+    internal class Event : ICloneable, IEquatable<Event>
     {
         public long Id;
         public string LinkedTo;
@@ -22,11 +25,16 @@ namespace gvaduha.proto.EventNotification
         public object Clone() => new Event(this);
 
         public override int GetHashCode() => Id.GetHashCode();
-        public override bool Equals(object obj) => obj is Event && Equals((Event)obj);
-        public bool Equals(Event evt) => evt.Id == Id;
+        //public override bool Equals(object obj) => obj is Event && Equals((Event)obj);
+        public bool Equals(Event other) => other?.Id == Id;
+        //{
+        //    if (other == null) return false;
+        //    if (ReferenceEquals(other,this)) return true;
+        //    return other.Id == Id;
+        //}
     }
 
-    class Alarm : ICloneable
+    internal class Alarm : ICloneable, IEquatable<Alarm>
     {
         public enum AlarmState
         {
@@ -60,10 +68,27 @@ namespace gvaduha.proto.EventNotification
             
         public bool AddEvent(Event evt) => _events.Add(evt);
         public bool RemoveEvent(Event evt) => _events.Remove(evt);
+
+        public bool Equals(Alarm other)
+        {
+            if (other == null) return false;
+            if (ReferenceEquals(other, this)) return true;
+            return State == other.State
+                && Key == other.Key
+                && _events.SetEquals(other._events);
+        }
+
         public int EventCount => _events.Count;
     }
 
-    class AlarmCache
+    internal interface IAlarmCache
+    {
+        bool TryGetValue(string key, out Alarm value);
+        void Add(string key, Alarm value);
+        IReadOnlyCollection<Alarm> GetUnnotifiedAlarms();
+    }
+
+    internal class AlarmCache : IAlarmCache
     {
         private readonly Dictionary<string, Alarm> _alarms = new Dictionary<string, Alarm>();
 
@@ -73,8 +98,8 @@ namespace gvaduha.proto.EventNotification
             //RefreshAlarmStates(); // consider uncomment for "dirty" data
         }
 
-        public bool TryGetValue(string key, out Alarm value) => _alarms.TryGetValue(key,out value);
-        public void Add(string key, Alarm value) => _alarms.Add(key, value);
+        public virtual bool TryGetValue(string key, out Alarm value) => _alarms.TryGetValue(key,out value);
+        public virtual void Add(string key, Alarm value) => _alarms.Add(key, value);
 
         private void RefreshAlarmStates()
         {
@@ -86,7 +111,7 @@ namespace gvaduha.proto.EventNotification
         /// Returns deep copied list of Alarms that are not sent to subscriber
         /// </summary>
         /// <returns>List of alarms in *Unsent state</returns>
-        public IReadOnlyCollection<Alarm> GetUnnotifiedAlarms()
+        public virtual IReadOnlyCollection<Alarm> GetUnnotifiedAlarms()
         {
             RefreshAlarmStates();
             return _alarms.Values.Where(
@@ -98,9 +123,15 @@ namespace gvaduha.proto.EventNotification
         }
     }
 
-    class SimpleEventProcessStrategy
+    /// <summary>
+    /// Strategy transforms invoming event to Alarm and push to AlarmCache
+    /// without checking alarm item current state
+    /// Preconditions: start and finish of the same event shouldn't arrive in one pack
+    ///                and completed events have to have respective alarm event (debug.asserted)
+    /// </summary>
+    internal class SimpleEventProcessStrategy
     {
-        public void TossEvent(Event evt, AlarmCache alarms)
+        public void TossEvent(Event evt, IAlarmCache alarms)
         {
             var potKey = evt.LinkedTo;
             (bool completed, bool alarmExist) @case = (evt.completed, alarms.TryGetValue(potKey, out var alarm));
@@ -122,42 +153,9 @@ namespace gvaduha.proto.EventNotification
             }
         }
 
-        public void ProcessEventBatch(IEnumerable<Event> events, AlarmCache alarms)
+        public void ProcessEventBatch(IEnumerable<Event> events, IAlarmCache alarms)
         {
             events.ToList().ForEach(x => TossEvent(x, alarms));
-        }
-    }
-
-    class Program
-    {
-        static void Main(string[] args)
-        {
-            var x = new SimpleEventProcessStrategy();
-
-            var e01 = new Event {Id=1, LinkedTo = "1:1", completed = false};
-            var e02 = new Event {Id=2, LinkedTo = "1:1", completed = false};
-            var e03 = new Event {Id=1, LinkedTo = "1:1", completed = false};
-
-            var e05 = new Event {Id=2, LinkedTo = "1:1", completed = true};
-            var e06 = new Event {Id=1, LinkedTo = "1:1", completed = true};
-            var e04 = new Event {Id=3, LinkedTo = "1:1", completed = false};
-
-            var e07 = new Event {Id=5, LinkedTo = "1:2", completed = false};
-            var e08 = new Event {Id=3, LinkedTo = "1:1", completed = true};
-            var e09 = new Event {Id=9, LinkedTo = "1:2", completed = false};
-
-            var l1 = new List<Event> {e01,e02,e03};
-            var l2 = new List<Event> {e04,e05,e06 };
-            var l3 = new List<Event> {e07,e08,e09};
-
-            //es.ForEach(i=>x.PotNotification(i));
-
-            var cache = new AlarmCache(new List<Alarm>());
-            x.ProcessEventBatch(l1, cache);
-            x.ProcessEventBatch(l2, cache);
-            x.ProcessEventBatch(l3, cache);
-
-            Console.WriteLine("Finish");
         }
     }
 }
