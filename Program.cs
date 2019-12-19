@@ -89,5 +89,42 @@ namespace gvaduha.proto.EventNotification
         {
             events.ToList().ForEach(x => TossEvent(x, alarms));
         }
+
+        public void MergeSentAlarms(IEnumerable<Alarm.ShortView> sentAlarms, IAlarmCache alarms)
+        {
+            sentAlarms.ToList().ForEach( sentAlarm =>
+            {
+               if (alarms.TryGetValue(sentAlarm.Key, out var cacheAlarm))
+                {
+                    var sentStates = new List<Alarm.AlarmState> {Alarm.AlarmState.AlarmSent, Alarm.AlarmState.FinishedSent};
+
+                    switch(sentAlarm.State)
+                    {
+                        case Alarm.AlarmState.AlarmSent:
+                            if (cacheAlarm.State == Alarm.AlarmState.AlarmPending)
+                                cacheAlarm.State = sentAlarm.State;
+                            else
+                                Debug.Assert(false, $"Alarm id:{sentAlarm.Id}, key:{sentAlarm.Key} state changed state:{sentAlarm.State} cache-state:{cacheAlarm.State}");
+                            break;
+                        case Alarm.AlarmState.FinishedSent:
+                            if (cacheAlarm.State == Alarm.AlarmState.FinishPending)
+                                cacheAlarm.State = Alarm.AlarmState.Completed;
+                            else
+                                Debug.Assert(false, $"Alarm id:{sentAlarm.Id}, key:{sentAlarm.Key} state changed state:{sentAlarm.State} cache-state:{cacheAlarm.State}");
+                            break;
+                        default:
+                            //Skip not sent alarms (or process it differently)
+                            //Debug.Assert(false, $"Alarm id:{sentAlarm.Id}, key:{sentAlarm.Key} in wrong state:{sentAlarm.State}");
+                            break;
+                    }
+                }
+               else
+                {
+                    Debug.Assert(false, $"Alarm id:{sentAlarm.Id}, key:{sentAlarm.Key} not found in cache");
+                }
+            });
+
+            alarms.PurgeCompletedAlarms();
+        }
     }
 }

@@ -8,15 +8,17 @@ namespace gvaduha.proto.EventNotification
     {
         public enum AlarmState
         {
-            AlarmUnsent,
+            New,
+            AlarmPending,
             AlarmSent,
-            FinishUnsent,
-            Finished // for backpropagation merge
+            FinishPending,
+            FinishedSent,
+            Completed  // for backpropagation merge
         }
 
         public Guid Id {get;} = Guid.NewGuid();
-        public AlarmState State { get; private set; }
-        public EventLinkKey Key { get; private set; }
+        public AlarmState State { get; set; }
+        public EventLinkKey Key { get; }
 
         private readonly HashSet<Event>  _events;
         private readonly List<long> _eventIdHistory = new List<long>();
@@ -31,15 +33,13 @@ namespace gvaduha.proto.EventNotification
 
         public Alarm(Event evt)
         {
-            State = AlarmState.AlarmUnsent;
+            State = AlarmState.New;
             Key = evt.LinkedTo;
             _events = new HashSet<Event> {evt};
         }
 
         public object Clone() => new Alarm(this);
 
-        public void FinilizeAlarm() => State = AlarmState.FinishUnsent;
-            
         public bool AddEvent(Event evt)
         {
             _eventIdHistory.Add(evt.Id);
@@ -82,7 +82,9 @@ namespace gvaduha.proto.EventNotification
     {
         bool TryGetValue(EventLinkKey key, out Alarm value);
         void Add(EventLinkKey key, Alarm value);
+        //bool Remove(EventLinkKey key);
         IReadOnlyCollection<Alarm> GetUnnotifiedAlarms();
+        void PurgeCompletedAlarms();
     }
 
     internal class AlarmCache : IAlarmCache
@@ -97,11 +99,32 @@ namespace gvaduha.proto.EventNotification
 
         public virtual bool TryGetValue(EventLinkKey key, out Alarm value) => _alarms.TryGetValue(key,out value);
         public virtual void Add(EventLinkKey key, Alarm value) => _alarms.Add(key, value);
+        public virtual bool Remove(EventLinkKey key) => _alarms.Remove(key);
 
-        private void RefreshAlarmStates()
+        private void RefreshAlarmStatesForExternalViewer()
         {
-            _alarms.Values.Where(x => x.EventCount == 0).ToList()
-                .ForEach(x=>x.FinilizeAlarm());
+            _alarms.Values.ToList().ForEach(x=>
+            {
+                if (x.State == Alarm.AlarmState.New) x.State = Alarm.AlarmState.AlarmPending;
+                if (x.EventCount == 0) x.State = Alarm.AlarmState.FinishPending;
+            });
+        }
+
+        private IReadOnlyCollection<T> GetUnnotifiedAlarmsSkeleton<T>(Func<Alarm,T> fun)
+        {
+            RefreshAlarmStatesForExternalViewer();
+            return _alarms.Values.Where(
+                x => new List<Alarm.AlarmState>
+                        {Alarm.AlarmState.AlarmPending, Alarm.AlarmState.FinishPending}
+                        .Contains(x.State))
+            .Select(x => fun(x))
+            .ToList();
+        }
+
+        public void PurgeCompletedAlarms()
+        {
+            _alarms.Where(x=>x.Value.State == Alarm.AlarmState.Completed).Select(x=>x.Key)
+                .ToList().ForEach(k=>Remove(k));
         }
 
         /// <summary>
@@ -110,24 +133,12 @@ namespace gvaduha.proto.EventNotification
         /// <returns>List of alarms in *Unsent state</returns>
         public virtual IReadOnlyCollection<Alarm> GetUnnotifiedAlarms()
         {
-            RefreshAlarmStates();
-            return _alarms.Values.Where(
-                x=> new List<Alarm.AlarmState>
-                        {Alarm.AlarmState.AlarmUnsent, Alarm.AlarmState.FinishUnsent}
-                        .Contains(x.State))
-            .Select(x => (Alarm)x.Clone())
-            .ToList();
+            return GetUnnotifiedAlarmsSkeleton( x => (Alarm) x.Clone());
         }
 
         public virtual IReadOnlyCollection<Alarm.ShortView> GetUnnotifiedAlarmsShortView()
         {
-            RefreshAlarmStates();
-            return _alarms.Values.Where(
-                x=> new List<Alarm.AlarmState>
-                        {Alarm.AlarmState.AlarmUnsent, Alarm.AlarmState.FinishUnsent}
-                        .Contains(x.State))
-            .Select(x => x.GetShortView())
-            .ToList();
+            return GetUnnotifiedAlarmsSkeleton( x => (Alarm.ShortView) x.GetShortView());
         }
 
     }
