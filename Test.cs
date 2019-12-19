@@ -6,16 +6,18 @@ namespace gvaduha.proto.EventNotification
 {
     class TestData
     {
-        public static Event e1b1 = new Event {Id=1, LinkedTo = "#1", completed = false};
-        public static Event e1e1 = new Event {Id=1, LinkedTo = "#1", completed = true};
-        public static Event e1b2 = new Event {Id=2, LinkedTo = "#1", completed = false};
-        public static Event e1e2 = new Event {Id=2, LinkedTo = "#1", completed = true};
-        public static Event e1b3 = new Event {Id=3, LinkedTo = "#1", completed = false};
-        public static Event e1e3 = new Event {Id=3, LinkedTo = "#1", completed = true};
-        public static Event e2b4 = new Event {Id=4, LinkedTo = "#2", completed = false};
-        public static Event e2e4 = new Event {Id=4, LinkedTo = "#2", completed = true};
-        public static Event e2b5 = new Event {Id=5, LinkedTo = "#2", completed = false};
-        public static Event e2e5 = new Event {Id=5, LinkedTo = "#2", completed = true};
+        public static EventLinkKey e1k = new EventLinkKey(1,1);
+        public static Event e1b1 = new Event {Id=1, LinkedTo = e1k, completed = false};
+        public static Event e1e1 = new Event {Id=1, LinkedTo = e1k, completed = true};
+        public static Event e1b2 = new Event {Id=2, LinkedTo = e1k, completed = false};
+        public static Event e1e2 = new Event {Id=2, LinkedTo = e1k, completed = true};
+        public static Event e1b3 = new Event {Id=3, LinkedTo = e1k, completed = false};
+        public static Event e1e3 = new Event {Id=3, LinkedTo = e1k, completed = true};
+        public static EventLinkKey e2k = new EventLinkKey(2,2);
+        public static Event e2b4 = new Event {Id=4, LinkedTo = e2k, completed = false};
+        public static Event e2e4 = new Event {Id=4, LinkedTo = e2k, completed = true};
+        public static Event e2b5 = new Event {Id=5, LinkedTo = e2k, completed = false};
+        public static Event e2e5 = new Event {Id=5, LinkedTo = e2k, completed = true};
     }
 
     public class Test
@@ -34,30 +36,30 @@ namespace gvaduha.proto.EventNotification
             sut.ProcessEventBatch(b1, cache.Object);
 
             Alarm _;
-            cache.Verify(x=>x.TryGetValue("#1", out _),
+            cache.Verify(x=>x.TryGetValue(TestData.e1k, out _),
                 Times.Exactly(3));
-            cache.Verify(x=>x.Add("#1", It.IsAny<Alarm>()),
+            cache.Verify(x=>x.Add(TestData.e1k, It.IsAny<Alarm>()),
                 Times.Once());
-            //cache.Verify(x=>x.Add("#1", new Alarm(TestData.e1b1)),
+            //cache.Verify(x=>x.Add(TestData.e1k, new Alarm(TestData.e1b1)),
             //    Times.Once());
 
-            var alarms = cache.Object.GetUnnotifiedAlarms();
+            var alarms = cache.Object.GetUnnotifiedAlarmsShortView();
 
             sut.ProcessEventBatch(b2, cache.Object);
-            cache.Verify(x=>x.TryGetValue("#1", out _),
+            cache.Verify(x=>x.TryGetValue(TestData.e1k, out _),
                 Times.Exactly(3));
-            cache.Verify(x=>x.Add("#2", It.IsAny<Alarm>()),
+            cache.Verify(x=>x.Add(TestData.e2k, It.IsAny<Alarm>()),
                 Times.Once());
 
-            alarms = cache.Object.GetUnnotifiedAlarms();
+            alarms = cache.Object.GetUnnotifiedAlarmsShortView();
 
             sut.ProcessEventBatch(b3, cache.Object);
-            cache.Verify(x=>x.TryGetValue("#1", out _),
+            cache.Verify(x=>x.TryGetValue(TestData.e1k, out _),
                 Times.Exactly(3));
-            cache.Verify(x=>x.Add("#2", It.IsAny<Alarm>()),
+            cache.Verify(x=>x.Add(TestData.e2k, It.IsAny<Alarm>()),
                 Times.Once());
 
-            alarms = cache.Object.GetUnnotifiedAlarms();
+            alarms = cache.Object.GetUnnotifiedAlarmsShortView();
         }
     }
 }
