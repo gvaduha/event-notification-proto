@@ -26,7 +26,7 @@ namespace gvaduha.proto.EventNotification
         public void TestBatches()
         {
             var b1 = new List<Event> {TestData.e1b1,TestData.e1b2,TestData.e1b3};
-            var b2 = new List<Event> {TestData.e1e2,TestData.e1e3,TestData.e2b4};
+            var b2 = new List<Event> {TestData.e1e1,TestData.e1e3,TestData.e2b4};
             var b3 = new List<Event> {TestData.e2b5,TestData.e1e2};
 
             var sut = new SimpleEventProcessStrategy();
@@ -38,28 +38,37 @@ namespace gvaduha.proto.EventNotification
             Alarm _;
             cache.Verify(x=>x.TryGetValue(TestData.e1k, out _),
                 Times.Exactly(3));
+            cache.Verify(x=>x.Add(It.IsAny<EventLinkKey>(), It.IsAny<Alarm>()),
+                Times.Once());
             cache.Verify(x=>x.Add(TestData.e1k, It.IsAny<Alarm>()),
                 Times.Once());
-            //cache.Verify(x=>x.Add(TestData.e1k, new Alarm(TestData.e1b1)),
-            //    Times.Once());
 
             var alarms = cache.Object.GetUnnotifiedAlarmsShortView();
+            Assert.Equal(alarms.Count, 1);
 
             sut.ProcessEventBatch(b2, cache.Object);
             cache.Verify(x=>x.TryGetValue(TestData.e1k, out _),
-                Times.Exactly(3));
+                Times.Exactly(2+3));
+            cache.Verify(x=>x.TryGetValue(TestData.e2k, out _),
+                Times.Once());
             cache.Verify(x=>x.Add(TestData.e2k, It.IsAny<Alarm>()),
                 Times.Once());
 
             alarms = cache.Object.GetUnnotifiedAlarmsShortView();
+            Assert.Equal(alarms.Count, 2);
 
             sut.ProcessEventBatch(b3, cache.Object);
             cache.Verify(x=>x.TryGetValue(TestData.e1k, out _),
-                Times.Exactly(3));
-            cache.Verify(x=>x.Add(TestData.e2k, It.IsAny<Alarm>()),
-                Times.Once());
+                Times.Exactly(2+3+1));
+
+            // totals
+            cache.Verify(x=>x.TryGetValue(It.IsAny<EventLinkKey>(), out _),
+                Times.Exactly(8));
+            cache.Verify(x=>x.Add(It.IsAny<EventLinkKey>(), It.IsAny<Alarm>()),
+                Times.Exactly(2));
 
             alarms = cache.Object.GetUnnotifiedAlarmsShortView();
+            Assert.Equal(alarms.Count, 2);
         }
     }
 }
